@@ -21,13 +21,13 @@ torch::Tensor l1(const torch::Tensor& rendered, const torch::Tensor& gt);
 
 struct Model{
   Model(const InputData &inputData, int numCameras,
-        int numDownscales, int resolutionSchedule, int shDegree, int shDegreeInterval, 
-        int refineEvery, int warmupLength, int resetAlphaEvery, float densifyGradThresh, float densifySizeThresh, int stopScreenSizeAt, float splitScreenSize,
+        int numDownscales, int resolutionSchedule, int shDegree, int shDegreeInterval,
+        int refineEvery, int warmupLength, int resetAlphaEvery, int stopSplitAt, float densifyGradThresh, float densifySizeThresh, int stopScreenSizeAt, float splitScreenSize,
         int maxSteps, bool keepCrs,
         const torch::Device &device) :
     numCameras(numCameras),
-    numDownscales(numDownscales), resolutionSchedule(resolutionSchedule), shDegree(shDegree), shDegreeInterval(shDegreeInterval), 
-    refineEvery(refineEvery), warmupLength(warmupLength), resetAlphaEvery(resetAlphaEvery), stopSplitAt(maxSteps / 2), densifyGradThresh(densifyGradThresh), densifySizeThresh(densifySizeThresh), stopScreenSizeAt(stopScreenSizeAt), splitScreenSize(splitScreenSize),
+    numDownscales(numDownscales), resolutionSchedule(resolutionSchedule), shDegree(shDegree), shDegreeInterval(shDegreeInterval),
+    refineEvery(refineEvery), warmupLength(warmupLength), resetAlphaEvery(resetAlphaEvery), stopSplitAt(stopSplitAt), densifyGradThresh(densifyGradThresh), densifySizeThresh(densifySizeThresh), stopScreenSizeAt(stopScreenSizeAt), splitScreenSize(splitScreenSize),
     maxSteps(maxSteps), keepCrs(keepCrs),
     device(device), ssim(11, 3){
 
@@ -50,7 +50,7 @@ struct Model{
     featuresDc = shs.index({Slice(), 0, Slice()}).to(device).requires_grad_();
     featuresRest = shs.index({Slice(), Slice(1, None), Slice()}).to(device).requires_grad_();
     opacities = torch::logit(0.1f * torch::ones({numPoints, 1})).to(device).requires_grad_();
-    
+
     // backgroundColor = torch::tensor({0.0f, 0.0f, 0.0f}, device); // Black
     backgroundColor = torch::tensor({0.6130f, 0.0101f, 0.3984f}, device); // Nerf Studio default
 
@@ -111,7 +111,7 @@ struct Model{
   int lastWidth; // set in forward()
 
   torch::Tensor xysGradNorm; // set in afterTrain()
-  torch::Tensor visCounts; // set in afterTrain()  
+  torch::Tensor visCounts; // set in afterTrain()
   torch::Tensor max2DSize; // set in afterTrain()
 
 

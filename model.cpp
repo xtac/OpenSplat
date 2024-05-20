@@ -77,7 +77,7 @@ torch::Tensor Model::forward(Camera& cam, int step){
     torch::Tensor viewMat = torch::eye(4, device);
     viewMat.index_put_({Slice(None, 3), Slice(None, 3)}, Rinv);
     viewMat.index_put_({Slice(None, 3), Slice(3, 4)}, Tinv);
-        
+
     float fovX = 2.0f * std::atan(width / (2.0f * fx));
     float fovY = 2.0f * std::atan(height / (2.0f * fy));
 
@@ -92,13 +92,13 @@ torch::Tensor Model::forward(Camera& cam, int step){
     torch::Tensor rgb;
 
     if (device == torch::kCPU){
-        auto p = ProjectGaussiansCPU::apply(means, 
-                                torch::exp(scales), 
-                                1, 
-                                quats / quats.norm(2, {-1}, true), 
-                                viewMat, 
+        auto p = ProjectGaussiansCPU::apply(means,
+                                torch::exp(scales),
+                                1,
+                                quats / quats.norm(2, {-1}, true),
+                                viewMat,
                                 torch::matmul(projMat, viewMat),
-                                fx, 
+                                fx,
                                 fy,
                                 cx,
                                 cy,
@@ -115,13 +115,13 @@ torch::Tensor Model::forward(Camera& cam, int step){
         TileBounds tileBounds = std::make_tuple((width + BLOCK_X - 1) / BLOCK_X,
                         (height + BLOCK_Y - 1) / BLOCK_Y,
                         1);
-        auto p = ProjectGaussians::apply(means, 
-                        torch::exp(scales), 
-                        1, 
-                        quats / quats.norm(2, {-1}, true), 
-                        viewMat, 
+        auto p = ProjectGaussians::apply(means,
+                        torch::exp(scales),
+                        1,
+                        quats / quats.norm(2, {-1}, true),
+                        viewMat,
                         torch::matmul(projMat, viewMat),
-                        fx, 
+                        fx,
                         fy,
                         cx,
                         cy,
@@ -138,7 +138,7 @@ torch::Tensor Model::forward(Camera& cam, int step){
             throw std::runtime_error("GPU support not built, use --cpu");
         #endif
     }
-    
+
 
     if (radii.sum().item<float>() == 0.0f)
         return backgroundColor.repeat({height, width, 1});
@@ -150,7 +150,7 @@ torch::Tensor Model::forward(Camera& cam, int step){
     viewDirs = viewDirs / viewDirs.norm(2, {-1}, true);
     int degreesToUse = (std::min<int>)(step / shDegreeInterval, shDegree);
     torch::Tensor rgbs;
-    
+
     if (device == torch::kCPU){
         rgbs = SphericalHarmonicsCPU::apply(degreesToUse, viewDirs, colors);
     }else{
@@ -158,7 +158,7 @@ torch::Tensor Model::forward(Camera& cam, int step){
         rgbs = SphericalHarmonics::apply(degreesToUse, viewDirs, colors);
         #endif
     }
-    
+
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
 
     if (device == torch::kCPU){
@@ -173,7 +173,7 @@ torch::Tensor Model::forward(Camera& cam, int step){
                 height,
                 width,
                 backgroundColor);
-    }else{  
+    }else{
         #if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
         rgb = RasterizeGaussians::apply(
                 xys,
@@ -228,7 +228,7 @@ void Model::addToOptimizer(torch::optim::Adam *optimizer, const torch::Tensor &n
     auto pId = c10::guts::to_string(param.unsafeGetTensorImpl());
 #endif
     auto paramState = std::make_unique<torch::optim::AdamParamState>(static_cast<torch::optim::AdamParamState&>(*optimizer->state()[pId]));
-    
+
     std::vector<int64_t> repeats;
     repeats.push_back(nSamples);
     for (long int i = 0; i < paramState->exp_avg().dim() - 1; i++){
@@ -236,12 +236,12 @@ void Model::addToOptimizer(torch::optim::Adam *optimizer, const torch::Tensor &n
     }
 
     paramState->exp_avg(torch::cat({
-        paramState->exp_avg(), 
+        paramState->exp_avg(),
         torch::zeros_like(paramState->exp_avg().index({idcs.squeeze()})).repeat(repeats)
     }, 0));
-    
+
     paramState->exp_avg_sq(torch::cat({
-        paramState->exp_avg_sq(), 
+        paramState->exp_avg_sq(),
         torch::zeros_like(paramState->exp_avg_sq().index({idcs.squeeze()})).repeat(repeats)
     }, 0));
 
@@ -251,7 +251,7 @@ void Model::addToOptimizer(torch::optim::Adam *optimizer, const torch::Tensor &n
     auto newPId = newParam.unsafeGetTensorImpl();
 #else
     auto newPId = c10::guts::to_string(newParam.unsafeGetTensorImpl());
-#endif    
+#endif
     optimizer->state()[newPId] = std::move(paramState);
     optimizer->param_groups()[0].params()[0] = newParam;
 }
@@ -283,7 +283,7 @@ void Model::afterTrain(int step){
 
     if (step < stopSplitAt){
         torch::Tensor visibleMask = (radii > 0).flatten();
-        
+
         torch::Tensor grads = torch::linalg::vector_norm(xys.grad().detach(), 2, { -1 }, false, torch::kFloat32);
         if (!xysGradNorm.numel()){
             xysGradNorm = grads;
@@ -319,7 +319,6 @@ void Model::afterTrain(int step){
             if (step < stopScreenSizeAt){
                 splits |= (max2DSize > splitScreenSize).squeeze();
             }
-
             splits &= highGrads;
             const int nSplitSamples = 2;
             int nSplits = splits.sum().item<int>();
@@ -330,12 +329,12 @@ void Model::afterTrain(int step){
             torch::Tensor rots = quatToRotMat(qs.repeat({nSplitSamples, 1}));
             torch::Tensor rotatedSamples = torch::bmm(rots, scaledSamples.index({"...", None})).squeeze();
             torch::Tensor splitMeans = rotatedSamples + means.index({splits}).repeat({nSplitSamples, 1});
-            
+
             torch::Tensor splitFeaturesDc = featuresDc.index({splits}).repeat({nSplitSamples, 1});
             torch::Tensor splitFeaturesRest = featuresRest.index({splits}).repeat({nSplitSamples, 1, 1});
-            
+
             torch::Tensor splitOpacities = opacities.index({splits}).repeat({nSplitSamples, 1});
-        
+
             const float sizeFac = 1.6f;
             torch::Tensor splitScales = torch::log(torch::exp(scales.index({splits})) / sizeFac).repeat({nSplitSamples, 1});
             scales.index({splits}) = torch::log(torch::exp(scales.index({splits})) / sizeFac);
@@ -357,7 +356,7 @@ void Model::afterTrain(int step){
             opacities = torch::cat({opacities.detach(), splitOpacities, dupOpacities}, 0).requires_grad_();
             scales = torch::cat({scales.detach(), splitScales, dupScales}, 0).requires_grad_();
             quats = torch::cat({quats.detach(), splitQuats, dupQuats}, 0).requires_grad_();
-            
+
             max2DSize = torch::cat({
                 max2DSize,
                 torch::zeros_like(splitScales.index({Slice(), 0})),
@@ -372,7 +371,7 @@ void Model::afterTrain(int step){
             addToOptimizer(featuresDcOpt, featuresDc, splitIdcs, nSplitSamples);
             addToOptimizer(featuresRestOpt, featuresRest, splitIdcs, nSplitSamples);
             addToOptimizer(opacitiesOpt, opacities, splitIdcs, nSplitSamples);
-            
+
             torch::Tensor dupIdcs = torch::where(dups)[0];
             addToOptimizer(meansOpt, means, dupIdcs, 1);
             addToOptimizer(scalesOpt, scales, dupIdcs, 1);
@@ -423,7 +422,7 @@ void Model::afterTrain(int step){
                 removeFromOptimizer(featuresDcOpt, featuresDc, culls);
                 removeFromOptimizer(featuresRestOpt, featuresRest, culls);
                 removeFromOptimizer(opacitiesOpt, opacities, culls);
-                
+
                 std::cout << "Culled " << (numPointsBefore - means.size(0)) << " gaussians, remaining " << means.size(0) << std::endl;
             }
         }
@@ -438,7 +437,7 @@ void Model::afterTrain(int step){
                 auto pId = param.unsafeGetTensorImpl();
             #else
                 auto pId = c10::guts::to_string(param.unsafeGetTensorImpl());
-            #endif    
+            #endif
             auto paramState = std::make_unique<torch::optim::AdamParamState>(static_cast<torch::optim::AdamParamState&>(*opacitiesOpt->state()[pId]));
             paramState->exp_avg(torch::zeros_like(paramState->exp_avg()));
             paramState->exp_avg_sq(torch::zeros_like(paramState->exp_avg_sq()));
@@ -504,7 +503,7 @@ void Model::savePly(const std::string &filename){
     o << "property float rot_1" << std::endl;
     o << "property float rot_2" << std::endl;
     o << "property float rot_3" << std::endl;
-    
+
     o << "end_header" << std::endl;
 
     float zeros[] = { 0.0f, 0.0f, 0.0f };
@@ -541,13 +540,13 @@ void Model::saveSplat(const std::string &filename){
 
     std::vector< size_t > splatIndices( numPoints );
     std::iota( splatIndices.begin(), splatIndices.end(), 0 );
-    torch::Tensor order = (scalesCpu.index({"...", 0}) + 
-                            scalesCpu.index({"...", 1}) + 
-                            scalesCpu.index({"...", 2})) / 
+    torch::Tensor order = (scalesCpu.index({"...", 0}) +
+                            scalesCpu.index({"...", 1}) +
+                            scalesCpu.index({"...", 2})) /
                             opac.index({"...", 0});
     float *orderPtr = reinterpret_cast<float *>(order.data_ptr());
 
-    std::sort(splatIndices.begin(), splatIndices.end(), 
+    std::sort(splatIndices.begin(), splatIndices.end(),
         [&orderPtr](size_t const &a, size_t const &b) {
             return orderPtr[a] > orderPtr[b];
         });
