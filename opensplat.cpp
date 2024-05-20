@@ -21,7 +21,7 @@ int main(int argc, char *argv[]){
         ("val-render", "Path of the directory where to render validation images", cxxopts::value<std::string>()->default_value(""))
         ("keep-crs", "Retain the project input's coordinate reference system")
         ("cpu", "Force CPU execution")
-        
+
         ("n,num-iters", "Number of iterations to run", cxxopts::value<int>()->default_value("30000"))
         ("d,downscale-factor", "Scale input images by this factor.", cxxopts::value<float>()->default_value("1"))
         ("num-downscales", "Number of images downscales to use. After being scaled by [downscale-factor], images are initially scaled by a further (2^[num-downscales]) and the scale is increased every [resolution-schedule]", cxxopts::value<int>()->default_value("2"))
@@ -32,6 +32,7 @@ int main(int argc, char *argv[]){
         ("refine-every", "Split/duplicate/prune gaussians every these many steps", cxxopts::value<int>()->default_value("100"))
         ("warmup-length", "Split/duplicate/prune gaussians only after these many steps", cxxopts::value<int>()->default_value("500"))
         ("reset-alpha-every", "Reset the opacity values of gaussians after these many refinements (not steps)", cxxopts::value<int>()->default_value("30"))
+        ("stop-split-at", "Stop splitting/duplicating gaussians after these many steps", cxxopts::value<int>()->default_value("15000"))
         ("densify-grad-thresh", "Threshold of the positional gradient norm (magnitude of the loss function) which when exceeded leads to a gaussian split/duplication", cxxopts::value<float>()->default_value("0.0002"))
         ("densify-size-thresh", "Gaussians' scales below this threshold are duplicated, otherwise split", cxxopts::value<float>()->default_value("0.01"))
         ("stop-screen-size-at", "Stop splitting gaussians that are larger than [split-screen-size] after these many steps", cxxopts::value<int>()->default_value("4000"))
@@ -64,7 +65,7 @@ int main(int argc, char *argv[]){
 
     const std::string projectRoot = result["input"].as<std::string>();
     const std::string outputScene = result["output"].as<std::string>();
-    const int saveEvery = result["save-every"].as<int>(); 
+    const int saveEvery = result["save-every"].as<int>();
     const bool validate = result.count("val") > 0 || result.count("val-render") > 0;
     const std::string valImage = result["val-image"].as<std::string>();
     const std::string valRender = result["val-render"].as<std::string>();
@@ -80,6 +81,7 @@ int main(int argc, char *argv[]){
     const int refineEvery = result["refine-every"].as<int>();
     const int warmupLength = result["warmup-length"].as<int>();
     const int resetAlphaEvery = result["reset-alpha-every"].as<int>();
+    const int stopSplitAt = result["stop-split-at"].as<int>();
     const float densifyGradThresh = result["densify-grad-thresh"].as<float>();
     const float densifySizeThresh = result["densify-size-thresh"].as<float>();
     const int stopScreenSizeAt = result["stop-screen-size-at"].as<int>();
@@ -113,8 +115,8 @@ int main(int argc, char *argv[]){
 
         Model model(inputData,
                     cams.size(),
-                    numDownscales, resolutionSchedule, shDegree, shDegreeInterval, 
-                    refineEvery, warmupLength, resetAlphaEvery, densifyGradThresh, densifySizeThresh, stopScreenSizeAt, splitScreenSize,
+                    numDownscales, resolutionSchedule, shDegree, shDegreeInterval,
+                    refineEvery, warmupLength, resetAlphaEvery, stopSplitAt, densifyGradThresh, densifySizeThresh, stopScreenSizeAt, splitScreenSize,
                     numIters, keepCrs,
                     device);
 
@@ -134,7 +136,7 @@ int main(int argc, char *argv[]){
 
             torch::Tensor mainLoss = model.mainLoss(rgb, gt, ssimWeight);
             mainLoss.backward();
-            
+
             if (step % displayStep == 0) std::cout << "Step " << step << ": " << mainLoss.item<float>() << std::endl;
 
             model.optimizersStep();
@@ -162,7 +164,7 @@ int main(int argc, char *argv[]){
         if (valCam != nullptr){
             torch::Tensor rgb = model.forward(*valCam, numIters);
             torch::Tensor gt = valCam->getImage(model.getDownscaleFactor(numIters)).to(device);
-            std::cout << valCam->filePath << " validation loss: " << model.mainLoss(rgb, gt, ssimWeight).item<float>() << std::endl; 
+            std::cout << valCam->filePath << " validation loss: " << model.mainLoss(rgb, gt, ssimWeight).item<float>() << std::endl;
         }
     }catch(const std::exception &e){
         std::cerr << e.what() << std::endl;
